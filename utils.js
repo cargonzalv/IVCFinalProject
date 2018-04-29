@@ -210,8 +210,8 @@ class Disk {
 
     const diskMatrix1 = this.getFlatDiskMatrix(modelViewMatrix, [0.0, 0.05, 0.0]);
     const diskMatrix2 = this.getFlatDiskMatrix(modelViewMatrix, [0.0, -0.05, 0.0]);
-    const diskMatrix3 = this.getFlatDiskMatrix(modelViewMatrix, [0, 0.06, 0.0],[0.45,1.0,0.45]);
-    const diskMatrix4 = this.getFlatDiskMatrix(modelViewMatrix, [0.0, 0.07, 0.0],[0.25,1.0,0.25]);
+    const diskMatrix3 = this.getFlatDiskMatrix(modelViewMatrix, [0.0, 0.050100, 0.0],[0.45,1.0,0.45]);
+    const diskMatrix4 = this.getFlatDiskMatrix(modelViewMatrix, [0.0, 0.050200, 0.0],[0.25,1.0,0.25]);
 
 
     Figure.draw(this.gl, this.programInfo, this.flatDiskBuffer, this.flatDiskTexture, projectionMatrix, diskMatrix1,
@@ -256,8 +256,7 @@ class LightPole {
     mat4.scale(cylinderMatrix, cylinderMatrix, [0.01, 0.1, 0.01]);
 
     Figure.draw(this.gl, this.programInfo, this.sphereBuffer, this.sphereTexture, projectionMatrix, sphereMatrix,
-      sunDirectionalVector, false /* isSun */, headlightPosition1, headlightPosition2, false /* isHeadlight */,
-      /* isLightPole */shadowBuffer, shadowMapTransformMatrix);
+      sunDirectionalVector, false /* isSun */, headlightPosition1, headlightPosition2, false /* isHeadlight */, shadowBuffer, shadowMapTransformMatrix, true/* isLightPole */);
     Figure.draw(this.gl, this.programInfo, this.cylinderBuffer, this.cylinderTexture, projectionMatrix, cylinderMatrix,
       sunDirectionalVector, false /* isSun */, headlightPosition1, headlightPosition2, false, /* isHeadlight */shadowBuffer, shadowMapTransformMatrix);
   }

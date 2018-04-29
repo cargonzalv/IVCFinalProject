@@ -103,8 +103,8 @@ function main() {
             lightWeighting = vec3(0.2, 0.2, 0.2);
           }
         } else {
-          lightWeighting = ambientLight*0.3;
           if (uIsHeadlight < 0.5 && uIsLightPole < 0.5) {
+            lightWeighting = ambientLight*0.3;
             vec3 vSurfaceToLight1 = uHeadlightPosition1 - vPosition.xyz;
             vec3 vSurfaceToLight2 = uHeadlightPosition2 - vPosition.xyz;
             vec3 vSurfaceToLight3 = vec3(0, 0.1, -0.1) - vPosition.xyz;
@@ -114,19 +114,20 @@ function main() {
             vec3 nStoL1 = normalize(vSurfaceToLight1);
             vec3 nStoL2 = normalize(vSurfaceToLight2);
             vec3 nStoL3 = normalize(vSurfaceToLight3);
-            float weight1 = max(dot(vTransformedNormal.xyz, nStoL1)*1.3, 0.0);
-            float weight2 = max(dot(vTransformedNormal.xyz, nStoL2)*1.3, 0.0);
-            float weight3 = max(dot(vTransformedNormal.xyz, nStoL3)*1.2, 0.0);
-            if(distance1 > 0.0){
-            lightWeighting += directionalLightColor * weight1;
+            float weight1 = max(dot(vTransformedNormal.xyz, nStoL1), 0.0)/(distance1*24.0);
+            float weight2 = max(dot(vTransformedNormal.xyz, nStoL2), 0.0)/(distance2*24.0);
+            float weight3 = max(dot(vTransformedNormal.xyz, nStoL3), 0.0)/(distance3*12.0);
+            if(distance1 > 0.0 && distance1 < 0.15){
+            lightWeighting +=  directionalLightColor * weight1;
             }
-            if(distance2 > 0.0){
+            if(distance2 > 0.0 && distance2 < 0.15){
             lightWeighting +=  directionalLightColor * weight2;
             }
-            if(distance3 > 0.0){
+            if(distance3 > 0.0 && distance3 < 0.25){
             lightWeighting += directionalLightColor * weight3;
             }
           } else {
+            lightWeighting = ambientLight;
             lightWeighting += directionalLightColor;
           }
         }
