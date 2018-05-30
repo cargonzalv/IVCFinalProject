@@ -5,20 +5,93 @@
   <!--  Meta  -->
   <meta charset="UTF-8" />
   <title>Interactive Visual Computing Final Project</title>
+  <link rel="stylesheet" type="text/css" href="style.css">
+  <link rel="stylesheet" type="text/css" href="sidebar.css" />
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.10.2/jquery-ui.min.js"></script>
+  <script type="text/javascript" src="jquery.sidebar.js"></script>
 
-  
-</head>
+  <script id="vs" type="notjs">
+    uniform mat4 u_viewInverse;
+    uniform mat4 u_world;
+    uniform mat4 u_worldViewProjection;
+    uniform mat4 u_worldInverseTranspose;
+    
+    attribute vec4 a_position;
+    attribute vec3 a_normal;
+    
+    varying vec3 v_normal;
+    varying vec3 v_surfaceToView;
+    
+    void main() {
+      v_normal = (u_worldInverseTranspose * vec4(a_normal, 0)).xyz;
+      v_surfaceToView = (u_viewInverse[3] - (u_world * a_position)).xyz;
+      gl_Position = u_worldViewProjection * a_position;
+    }
+      </script>
+      <script id="fs" type="notjs">
+    precision mediump float;
+    
+    uniform samplerCube u_texture;
+    
+    varying vec3 v_surfaceToView;
+    varying vec3 v_normal;
+    
+    void main() {
+      vec3 normal = normalize(v_normal);
+      vec3 surfaceToView = normalize(v_surfaceToView);
+      vec4 color = textureCube(u_texture, -reflect(surfaceToView, normal));
+      gl_FragColor = color;
+    }
+  </script>
+    <!-- Scripts -->
+
+    <script src="https://twgljs.org/dist/4.x/twgl-full.min.js"></script>
+    <script src="simple-rotator.js"></script>
+  </head>
 <body>
-  <h2>
-   <a href= "https://github.com/cegonzalv/IVCFinalProject">Repo</a>
- </h2>
- <canvas id="canvas" height=900 width=900 style="background-color: black"></canvas>
- <div id="uiContainer">
-  <div id="ui">
-    <div id="cameraAngle"></div>
-    <div id="cameraHeight"></div>
-  </div>
-</div>
+  
+
+ <canvas id="canvas"></canvas>
+     <script src="car.js"></script>
+
+    <script type="text/javascript"  src="index.js"></script>
+
+ <ul id="demo_menu1" >
+<li>Select your car color: <input type="color" id="myColor"></li>
+<button onclick="getCarColor()">Try it</button>
+<li>Select your wheels color: <input type="color" id="myWheelsColor"></li>
+<button onclick="getWheelsColor()">Try it</button></li>
+<li>Select your background color: <input type="color" id="myBGColor"></li>
+<button onclick="getBackgroundColor()">Try it</button></li>
+
+</ul>
+
+  <script type="text/javascript">
+        $("ul#demo_menu1").sidebar();
+        $("ul#demo_menu2").sidebar({
+            position:"right",
+            callback:{
+                item : {
+                    enter : function(){
+                        $(this).find("a").animate({color:"red"}, 250);
+                    },
+                    leave : function(){
+                        $(this).find("a").animate({color:"white"}, 250);
+                    }
+                }
+            }
+        });
+        $("ul#demo_menu3").sidebar({
+            position:"top",
+          open:"click"
+        });
+        $("ul#demo_menu4").sidebar({
+            position:"bottom"
+        });
+        </script>
+
+
 
 
 

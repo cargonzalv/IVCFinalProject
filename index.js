@@ -1,338 +1,457 @@
-let canvasWidth, canvasHeight = 0;
+var Node = function() {
+     this.children = [];
+     this.localMatrix = m4.identity();
+     this.worldMatrix = m4.identity();
+   };
 
-main();
+   Node.prototype.setParent = function(parent) {
+     // remove us from our parent
+     if (this.parent) {
+       var ndx = this.parent.children.indexOf(this);
+       if (ndx >= 0) {
+         this.parent.children.splice(ndx, 1);
+       }
+     }
 
-//
-// Start here
-//
-function main() {
-  const canvas = document.querySelector('#canvas');
-  const gl = canvas.getContext('webgl');
-  canvasWidth = canvas.width;
-  canvasHeight = canvas.height;
-  let depth_texture_extension = gl.getExtension('WEBGL_depth_texture');
+     // Add us to our new parent
+     if (parent) {
+       parent.children.push(this);
+     }
+     this.parent = parent;
+   };
 
-  // If we don't have a GL context, give up now
+   Node.prototype.updateWorldMatrix = function(parentWorldMatrix) {
+     if (parentWorldMatrix) {
+       // a matrix was passed in so do the math
+       m4.multiply(parentWorldMatrix, this.localMatrix, this.worldMatrix);
+     } else {
+       // no matrix was passed in so just copy local to world
+       m4.copy(this.localMatrix, this.worldMatrix);
+     }
 
-  if (!gl) {
-    alert('Unable to initialize WebGL. Your browser or machine may not support it.');
-    return;
+     // now process all the children
+     var worldMatrix = this.worldMatrix
+     this.children.forEach(function(child) {
+       child.updateWorldMatrix(worldMatrix);
+     });
+   };
+
+
+const vs = `
+uniform mat4 u_worldViewProjection;
+uniform vec3 u_lightWorldPos;
+uniform mat4 u_world;
+uniform mat4 u_viewInverse;
+uniform mat4 u_worldInverseTranspose;
+
+attribute vec4 position;
+attribute vec3 normal;
+attribute vec2 texcoord;
+
+varying vec4 v_position;
+varying vec2 v_texCoord;
+varying vec3 v_normal;
+varying vec3 v_surfaceToLight;
+varying vec3 v_surfaceToView;
+
+void main() {
+  v_texCoord = texcoord;
+  v_position = (u_worldViewProjection * position);
+  v_normal = (u_worldInverseTranspose * vec4(normal, 0)).xyz;
+  v_surfaceToLight = u_lightWorldPos - (u_world * position).xyz;
+  v_surfaceToView = (u_viewInverse[3] - (u_world * position)).xyz;
+  gl_Position = v_position;
+}
+`;
+const fs = `
+precision mediump float;
+
+varying vec4 v_position;
+varying vec2 v_texCoord;
+varying vec3 v_normal;
+varying vec3 v_surfaceToLight;
+varying vec3 v_surfaceToView;
+
+uniform vec4 u_lightColor;
+uniform vec4 u_diffuseMult;
+uniform sampler2D u_diffuse;
+uniform vec4 u_specular;
+uniform float u_shininess;
+uniform float u_specularFactor;
+
+vec4 lit(float l ,float h, float m) {
+  return vec4(1.0,
+              abs(l),//max(l, 0.0),
+              (l > 0.0) ? pow(max(0.0, h), m) : 0.0,
+              1.0);
+}
+
+void main() {
+  vec4 diffuseColor = texture2D(u_diffuse, v_texCoord) * u_diffuseMult;
+  vec3 normal = normalize(v_normal);
+  vec3 surfaceToLight = normalize(v_surfaceToLight);
+  vec3 surfaceToView = normalize(v_surfaceToView);
+  vec3 halfVector = normalize(surfaceToLight + surfaceToView);
+  vec4 litR = lit(dot(normal, surfaceToLight),
+                    dot(normal, halfVector), u_shininess);
+  vec4 outColor = vec4((
+  u_lightColor * (diffuseColor +
+                u_specular * litR.z * u_specularFactor)).rgb,
+      diffuseColor.a);
+  gl_FragColor = outColor;
+}
+`;
+
+const m4 = twgl.m4;
+const v3 = twgl.v3;
+
+let carColor = {r:2 / 3 , g:1,b:2/3};
+gl = document.querySelector("canvas").getContext("webgl");
+
+
+const attributes = [
+      "position",
+      "normal",
+      "texcoord",
+    ];
+const progInfo = twgl.createProgramInfo(gl, [vs, fs],attributes);
+
+const skyboxProgInfo = twgl.createProgramInfo(gl, ["vs", "fs"]);
+
+const plane = twgl.primitives.createXYQuadBufferInfo(gl);
+const bufferInfo = twgl.primitives.createCubeBufferInfo(gl, 0.4,1);
+const terrainBufferInfo = twgl.primitives.createDiscBufferInfo(gl, 50, 40)
+console.log(bufferInfo);
+ projection = m4.identity();
+const camera = m4.identity();
+const view = m4.identity();
+const viewProjection = m4.identity();
+const world = m4.identity();
+const worldViewProjection = m4.identity();
+const worldInverse = m4.identity();
+const worldInverseTranspose = m4.identity();
+
+
+const fov = degToRad(90);
+const zNear = 0.1;
+const zFar = 100;
+
+const lightDir = v3.normalize([1, 2, 3]);
+
+const keys = {};
+
+let px = 0;
+let py = 0;
+let pz = 0;
+let elev = 0;
+let ang = 0;
+let spin = 0;
+let roll = 0;
+const speed = 5;
+const turnSpeed = 90;
+
+var objectsToDraw = [];
+var objects = [];
+  
+  const viewDirectionProjectionInverse = m4.identity();
+      const viewDirection = m4.identity();
+    const viewDirectionProjection = m4.identity();
+
+  var skyboxNode = new Node();
+  skyboxNode.localMatrix = m4.identity();
+  skyboxNode.drawInfo = {
+    programInfo: skyboxProgInfo,
+    bufferInfo:plane,
+    uniforms:{
+      u_skybox: twgl.createTexture(gl, {
+        target: gl.TEXTURE_CUBE_MAP,
+        src: [
+        'images/skyposx1.png',
+        'images/skynegx1.png',
+        'images/skyposy1.png',
+        'images/skynegy1.png',
+        'images/skyposz1.png',
+        'images/skynegz1.png'
+        ],
+      }),
+    }
+
   }
+  var cameraNode = new Node();
+  cameraNode.drawInfo = {
 
-  // Vertex shader program
-
-// Vertex shader program
-
-  const vsSource = `
-    attribute vec4 aVertexPosition;
-    attribute vec3 aVertexNormal;
-    attribute vec2 aTextureCoord;
-
-    uniform mat4 uNormalMatrix;
-    uniform mat4 uModelViewMatrix;
-    uniform mat4 uProjectionMatrix;
-    uniform mat4 uShadowMapTransformMatrix;
-    
-    varying vec2 vTextureCoord;
-    varying highp vec4 vTransformedNormal;
-    varying vec4 vPosition;
-    varying vec4 vVertexRelativeToLight;
-
-
-    void main(void) {
-      vPosition = uModelViewMatrix * aVertexPosition;
-      gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
-      vTextureCoord = aTextureCoord;
-      vTransformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0);
-      vVertexRelativeToLight = uShadowMapTransformMatrix * uModelViewMatrix * aVertexPosition;
-    }
-  `;
-
-  // Fragment shader program
-  const fsSource = `
-    precision mediump float;
-    
-    varying vec2 vTextureCoord;
-    varying highp vec4 vTransformedNormal;
-    varying vec4 vPosition;
-    varying vec4 vVertexRelativeToLight;
-    
-    uniform highp float uIsSun;
-    uniform highp float uIsHeadlight;
-    uniform highp float uIsLightPole;
-    uniform highp float uApplyShadow;
-
-    uniform vec3 uSunDirectionalVector;
-    uniform bool uSunUp;
-    uniform vec3 uHeadlightPosition1;
-    uniform vec3 uHeadlightPosition2;
-
-    uniform vec3 uSunColor;
-    uniform sampler2D uSampler;
-    uniform sampler2D uShadowSampler;
-
-     bool in_shadow(void) {
-      vec3 vertex_relative_to_light = vVertexRelativeToLight.xyz / vVertexRelativeToLight.w;
-      vertex_relative_to_light = vertex_relative_to_light * 0.5 + 0.5;
-      vec4 shadowmap_color = texture2D(uShadowSampler, vertex_relative_to_light.xy);
-      float shadowmap_distance = shadowmap_color.r;
-
-      if ( vertex_relative_to_light.z <= shadowmap_distance + 0.00004 ) {
-        return false; 
-      } else {
-        return true;
-      }
-    }
-
-    void main(void) {
-      float z = gl_FragCoord.z;
-
-      highp vec4 texelColor = texture2D(uSampler, vTextureCoord);
-      // Apply lighting effect
-      
-      highp vec3 ambientLight = vec3(0.7, 0.7, 0.7);
-      highp vec3 directionalLightColor = vec3(1, 1, 1);
-      highp vec3 directionalVector = normalize(uSunDirectionalVector);
-      vec3 lightWeighting = ambientLight;
-            
-      highp float directional = max(dot(vTransformedNormal.xyz, directionalVector), 0.0);
-      if (uIsSun < 0.5) {
-        if (uSunUp) {
-          lightWeighting += (directionalLightColor * (directional));
-          if (in_shadow()) {
-            lightWeighting = vec3(0.2, 0.2, 0.2);
-          }
-        } else {
-          if (uIsHeadlight < 0.5 && uIsLightPole < 0.5) {
-            lightWeighting = ambientLight*0.3;
-            vec3 vSurfaceToLight1 = uHeadlightPosition1 - vPosition.xyz;
-            vec3 vSurfaceToLight2 = uHeadlightPosition2 - vPosition.xyz;
-            vec3 vSurfaceToLight3 = vec3(0, 0.1, -0.1) - vPosition.xyz;
-            float distance1 = length(vSurfaceToLight1);
-            float distance2 = length(vSurfaceToLight2);
-            float distance3 = length(vSurfaceToLight3);
-            vec3 nStoL1 = normalize(vSurfaceToLight1);
-            vec3 nStoL2 = normalize(vSurfaceToLight2);
-            vec3 nStoL3 = normalize(vSurfaceToLight3);
-            float weight1 = max(dot(vTransformedNormal.xyz, nStoL1), 0.0)/(distance1*24.0);
-            float weight2 = max(dot(vTransformedNormal.xyz, nStoL2), 0.0)/(distance2*24.0);
-            float weight3 = max(dot(vTransformedNormal.xyz, nStoL3), 0.0)/(distance3*12.0);
-            if(distance1 > 0.0 && distance1 < 0.15){
-            lightWeighting +=  directionalLightColor * weight1;
-            }
-            if(distance2 > 0.0 && distance2 < 0.15){
-            lightWeighting +=  directionalLightColor * weight2;
-            }
-            if(distance3 > 0.0 && distance3 < 0.25){
-            lightWeighting += directionalLightColor * weight3;
-            }
-          } else {
-            lightWeighting = ambientLight;
-            lightWeighting += directionalLightColor;
-          }
-        }
-      } else {
-        lightWeighting += directionalLightColor;
-      }
-
-      gl_FragColor = vec4(texelColor.rgb * lightWeighting, texelColor.a);
-    }
-  `;
-  
-  const vsShadowSource = `
-    // Vertex Shader
-    precision mediump int;
-    precision highp float;
-    
-    attribute vec4 aVertexPosition;
-    
-    uniform mat4 uNormalMatrix;
-    uniform mat4 uModelViewMatrix;
-    uniform mat4 uProjectionMatrix;
-    uniform mat4 uShadowMapTransformMatrix;
-
-    void main() {
-      gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
-    }
-  `;
-
-  const fsShadowSource = `
-    // Fragment shader program
-    precision mediump int;
-    precision highp float;
-    
-    void main() {    
-      float z = gl_FragCoord.z;    
-      gl_FragColor = vec4(z, 0.0, 0.0, 1.0);
-    }
-  `;
-
-  // Initialize a shader program; this is where all the lighting
-  // for the vertices and so forth is established.
-  const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
-    const shaderShadowProgram = initShaderProgram(gl, vsShadowSource, fsShadowSource);
-
-
-  // Collect all the info needed to use the shader program.
-  // Look up which attributes our shader program is using
-  // for aVertexPosition, aTextureCoord and also
-  // look up uniform locations.
-  const programInfo = {
-    program: shaderProgram,
-    attribLocations: {
-      vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
-      textureCoord: gl.getAttribLocation(shaderProgram, 'aTextureCoord'),
-      vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal')
-    },
-    uniformLocations: {
-      projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-      modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-      normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
-      uSampler: gl.getUniformLocation(shaderProgram, 'uSampler'),
-      uShadowSampler: gl.getUniformLocation(shaderProgram, 'uShadowSampler'),
-      sunDirectionalVector: gl.getUniformLocation(shaderProgram, 'uSunDirectionalVector'),
-      isSun: gl.getUniformLocation(shaderProgram, 'uIsSun'),
-      headlightPosition1: gl.getUniformLocation(shaderProgram, 'uHeadlightPosition1'),
-      headlightPosition2: gl.getUniformLocation(shaderProgram, 'uHeadlightPosition2'),
-      isHeadlight: gl.getUniformLocation(shaderProgram, 'uIsHeadlight'),
-      isLightPole: gl.getUniformLocation(shaderProgram, 'uIsLightPole'),
-      shadowMapTransformMatrix: gl.getUniformLocation(shaderProgram, 'uShadowMapTransformMatrix'),
-      applyShadow: gl.getUniformLocation(shaderProgram, 'uApplyShadow')
-
-    },
-  };
-  
-  const shadowProgramInfo = {
-    program: shaderShadowProgram,
-    attribLocations: {
-      vertexPosition: gl.getAttribLocation(shaderShadowProgram, 'aVertexPosition'),
-      textureCoord: gl.getAttribLocation(shaderShadowProgram, 'aTextureCoord'),
-      vertexNormal: gl.getAttribLocation(shaderShadowProgram, 'aVertexNormal')
-    },
-    uniformLocations: {
-      projectionMatrix: gl.getUniformLocation(shaderShadowProgram, 'uProjectionMatrix'),
-      modelViewMatrix: gl.getUniformLocation(shaderShadowProgram, 'uModelViewMatrix'),
-      normalMatrix: gl.getUniformLocation(shaderShadowProgram, 'uNormalMatrix'),
-      uSampler: gl.getUniformLocation(shaderShadowProgram, 'uSampler'),
-      uShadowSampler: gl.getUniformLocation(shaderShadowProgram, 'uShadowSampler'),
-      sunDirectionalVector: gl.getUniformLocation(shaderShadowProgram, 'uSunDirectionalVector'),
-      isSun: gl.getUniformLocation(shaderShadowProgram, 'uIsSun'),
-      headlightPosition1: gl.getUniformLocation(shaderShadowProgram, 'uHeadlightPosition1'),
-      headlightPosition2: gl.getUniformLocation(shaderShadowProgram, 'uHeadlightPosition2'),
-      isHeadlight: gl.getUniformLocation(shaderShadowProgram, 'uIsHeadlight'),
-      isLightPole: gl.getUniformLocation(shaderShadowProgram, 'uIsLightPole'),
-      shadowMapTransformMatrix: gl.getUniformLocation(shaderShadowProgram, 'uShadowMapTransformMatrix'),
-      applyShadow: gl.getUniformLocation(shaderShadowProgram, 'uApplyShadow')
-    },
+    programInfo: progInfo,
+    bufferInfo: bufferInfo,
   };
 
-  var then = 0;
+  var terrainNode = new Node();
+  terrainNode.localMatrix = m4.identity();
+  m4.translate(terrainNode.localMatrix,[0,-0.4,0],terrainNode.localMatrix);
+  terrainNode.name = "Terrain";
+  terrainNode.drawInfo = {
+    uniforms: {
+      u_diffuseMult: [(0.5) / 3, (1) / 3, (1.6) / 3, 1],
+      u_diffuse: twgl.createTexture(gl, {
+      src: "images/grass.png",
+    })
+    },
+    programInfo: progInfo,
+    bufferInfo: terrainBufferInfo,
+  };
 
-  const fieldOfView = 60 * Math.PI / 180;   // in radians
-  const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-  const zNear = 1;
-  const zFar = 2000;
-   const projectionMatrix1 = mat4.create();
-  const projectionMatrix2 = mat4.create();
+  createCar();
 
-  const shadowBuffer = Utils.createShadowFrameBuffer(gl, 512, 512);
-  const shadowScene = new Scene(gl, shadowProgramInfo, projectionMatrix2, true /* isForShadow */, null, mat4.create());
-  // mat4.perspective(projectionMatrix,
-  //   fieldOfView,
-  //   aspect,
-  //   zNear,
-  //   zFar);
+  cameraNode.setParent(terrainNode);
 
-  const scene = new Scene(gl, programInfo, projectionMatrix1, false /* isForShadow */, shadowBuffer, projectionMatrix2);
+  // connect the celetial objects
 
-  // Draw the scene repeatedly
-  function render(now) {
-    now *= 0.001;  // convert to seconds
-    const deltaTime = now - then;
-    then = now;
- 
-    drawScene(gl, scene, shadowScene, shadowBuffer, deltaTime);
+  var objects = [
+    terrainNode,
+    carNode,
+    wheelNode,
+    wheel1,
+    subWheel1,
+    wheel2,
+    subWheel2,
+    wheel3,
+    subWheel3,
+    wheel4,
+    subWheel4,
+    front,
+    back,
+    roofs[0],
+    roofs[1],
+    roofs[2],
+    roofs[3],
+    roofs[4],
+    roofs[5],
+    roofs[6],
+    frontfront,
+    obstacles[0],
+    obstacles[1],
+    obstacles[2],
+    obstacles[3],
+    obstacles[4],
+    obstacles[5],
+    obstacles[6],
+    obstacles[7],
+    obstacles[8],
+  ];
 
-    requestAnimationFrame(render);
+
+
+let then = 0;
+
+function render(now) {
+  now *= 0.001;  // seconds;
+  const deltaTime = now - then;
+  then = now;
+  
+  twgl.resizeCanvasToDisplaySize(gl.canvas);
+  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+  
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE) 
+    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+
+
+  m4.perspective(fov, aspect, zNear, zFar, projection);
+
+  m4.identity(camera);
+
+ //  const eye = [0, 3, 0];
+ //  const target = [0, 2, -1.5];
+ //   const up = [0, 2, 0.1];
+ // m4.lookAt(eye, target, up, camera);
+
+
+  m4.translate(camera, [px, py+0.5, pz+0.2], camera);
+  m4.rotateX(camera, degToRad(elev), camera);   
+  m4.rotateY(camera, degToRad(-ang), camera);   
+  m4.rotateZ(camera, degToRad(roll), camera);
+  
+
+  m4.identity(cameraNode.localMatrix);   
+
+  m4.translate(cameraNode.localMatrix, [px, py, pz], cameraNode.localMatrix);
+  m4.rotateY(cameraNode.localMatrix, degToRad(-ang), cameraNode.localMatrix);   
+  m4.rotateZ(cameraNode.localMatrix, degToRad(roll), cameraNode.localMatrix);
+
+
+  m4.inverse(camera, view);
+
+  m4.multiply(projection, view, viewProjection);
+
+
+
+   //ws
+  if (keys['87'] || keys['83']) {
+    const direction = keys['87'] ? 1 : -1;
+    m4.rotateY(wheel1.localMatrix, direction*speed*5*deltaTime, wheel1.localMatrix);
+    m4.rotateY(wheel2.localMatrix, direction*speed*5*deltaTime, wheel2.localMatrix);
+    m4.rotateY(wheel3.localMatrix, direction*speed*5*deltaTime, wheel3.localMatrix);
+    m4.rotateY(wheel4.localMatrix, direction*speed*5*deltaTime, wheel4.localMatrix);
+
+    px -= camera[ 8] * deltaTime * speed * direction;
+    pz -= camera[10] * deltaTime * speed * direction;
+    console.log(px,py,pz)
   }
+  //ad
+  if (keys['65'] || keys['68']) {
+     const direction = keys['65'] ? -1 : 1;
+    let dir = direction*deltaTime > 0.001 ? 0.001 : (direction*deltaTime < -0.001 ? -0.001 : direction*deltaTime);
+    m4.rotateX(wheel1.localMatrix, dir, wheel1.localMatrix);
+    m4.rotateZ(wheel2.localMatrix, dir, wheel2.localMatrix);
+    m4.rotateZ(wheel3.localMatrix, dir, wheel3.localMatrix);
+    m4.rotateZ(wheel4.localMatrix, dir, wheel4.localMatrix);
+    ang += deltaTime * turnSpeed * direction;
+  }
+//qe
+  if (keys['81'] || keys['69']) {
+    const direction = keys['81'] ? 1 : -1;
+    roll += deltaTime * turnSpeed * direction;
+    console.log("ROLL: " + roll)
+  }
+  //updown
+  if (keys['38'] || keys['40']) {
+    const direction = keys['38'] ? 1 : -1;
+    elev += deltaTime * 100 * direction;
+  }
+  
 
+// ------ Draw the objects --------
+  var lastUsedProgramInfo = null;
+  var lastUsedBufferInfo = null;
+
+
+  terrainNode.updateWorldMatrix();
+  cameraNode.updateWorldMatrix();
+  const lightWorldPosition = [1, 8, -10];
+  const lightColor = [1, 1, 1, 1];
+  objects.forEach(function(object) {
+      var programInfo = object.drawInfo.programInfo; 
+      var bufferInfoo = object.drawInfo.bufferInfo;
+
+      object.drawInfo.uniforms.u_worldViewProjection = worldViewProjection;
+      object.drawInfo.uniforms.u_worldInverseTranspose =  worldInverseTranspose;
+      object.drawInfo.uniforms.u_lightWorldPos = lightWorldPosition;
+      object.drawInfo.uniforms.u_lightColor = lightColor;
+      object.drawInfo.uniforms.u_specular = [1, 1, 1, 1];
+      object.drawInfo.uniforms.u_shininess = 50;
+      object.drawInfo.uniforms.u_specularFactor = 1;
+      object.drawInfo.uniforms.u_viewInverse = camera;
+      object.drawInfo.uniforms.u_world = world;
+      object.drawInfo.uniforms.u_diffuseMult = object.drawInfo.uniforms.u_diffuseMult;
+      object.drawInfo.uniforms.u_diffuse = object.drawInfo.uniforms.u_diffuse;
+      m4.multiply(viewProjection, object.worldMatrix, worldViewProjection);
+      m4.inverse(object.worldMatrix, worldInverse);
+      m4.transpose(worldInverse, worldInverseTranspose);
+
+
+      var bindBuffers = false;
+
+      if (programInfo !== lastUsedProgramInfo) {
+        lastUsedProgramInfo = programInfo;
+        gl.useProgram(programInfo.program);
+
+        // We have to rebind buffers when changing programs because we
+        // only bind buffers the program uses. So if 2 programs use the same
+        // bufferInfo but the 1st one uses only positions the when the
+        // we switch to the 2nd one some of the attributes will not be on.
+        bindBuffers = true;
+      }
+
+
+       // Setup all the needed attributes.
+      if (bindBuffers || bufferInfoo !== lastUsedBufferInfo) {
+        lastUsedBufferInfo = bufferInfoo;
+        twgl.setBuffersAndAttributes(gl, programInfo, bufferInfoo);
+      }
+
+      // Set the uniforms.
+
+      twgl.setUniforms(programInfo, object.drawInfo.uniforms);
+
+      // Draw
+      twgl.drawBufferInfo(gl, bufferInfoo);
+
+
+    });
+
+
+
+
+   
   requestAnimationFrame(render);
 }
-
-//
-// Draw the scene.
-//
-function drawScene(gl, scene, shadowScene, shadowBuffer, deltaTime) {
-  shadowScene.update(deltaTime);
-  scene.update(deltaTime);
-
-  // Shadow Map Render 
-  gl.bindFramebuffer(gl.FRAMEBUFFER,  shadowBuffer);
-  clearBuffer(gl);
-  gl.viewport(0, 0, shadowBuffer.width, shadowBuffer.height);
-  shadowScene.draw();
-
-  // Real render
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  clearBuffer(gl);
-  gl.viewport(0, 0, canvasWidth, canvasHeight);
-  scene.draw();
-}
-function clearBuffer(gl) {
-  gl.clearColor(0.0, 0.0, 0.0, 1.0);  // Clear to black, fully opaque
-  gl.clearDepth(1.0);                 // Clear everything
-  gl.enable(gl.DEPTH_TEST);           // Enable depth testing
-  gl.depthFunc(gl.LEQUAL);            // Near things obscure far things
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-}
+requestAnimationFrame(render);
 
 
-//
-// Initialize a shader program, so WebGL knows how to draw our data
-//
-function initShaderProgram(gl, vsSource, fsSource) {
-  const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
-  const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+window.addEventListener('keydown', (e) => {
+  keys[e.keyCode] = true;
+  e.preventDefault();
+});
+window.addEventListener('keyup', (e) => {
+  keys[e.keyCode] = false;
+  e.preventDefault();
+});
 
-  // Create the shader program
 
-  const shaderProgram = gl.createProgram();
-  gl.attachShader(shaderProgram, vertexShader);
-  gl.attachShader(shaderProgram, fragmentShader);
-  gl.linkProgram(shaderProgram);
-
-  // If creating the shader program failed, alert
-
-  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
-    alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
-    return null;
+ function degToRad(d) {
+    return d * Math.PI / 180;
   }
 
-  return shaderProgram;
-}
-
-//
-// creates a shader of the given type, uploads the source and
-// compiles it.
-//
-function loadShader(gl, type, source) {
-  const shader = gl.createShader(type);
-
-  // Send the source to the shader object
-
-  gl.shaderSource(shader, source);
-
-  // Compile the shader program
-
-  gl.compileShader(shader);
-
-  // See if it compiled successfully
-
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    alert('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
-    gl.deleteShader(shader);
-    return null;
+  function rand(min, max) {
+    return Math.random() * (max - min) + min;
   }
 
-  return shader;
+  function emod(x, n) {
+    return x >= 0 ? (x % n) : ((n - (-x % n)) % n);
+  };
+
+function normalize(angle){
+
+  angle = angle > 0.01 ? 0.01 : angle < -0.01 ? -0.01 : angle;
+  console.log(angle)
+  return angle;
+}
+
+function getCarColor() {
+    var x = document.getElementById("myColor").value;
+    carColor = hexToRgb(x);
+    carNode.drawInfo.uniforms.u_diffuseMult = [carColor.r,carColor.g,carColor.b,1];
+    front.drawInfo.uniforms.u_diffuseMult = [carColor.r,carColor.g,carColor.b,1];
+    back.drawInfo.uniforms.u_diffuseMult = [carColor.r,carColor.g,carColor.b,1];
+    frontfront.drawInfo.uniforms.u_diffuseMult = [carColor.r,carColor.g,carColor.b,1];
+  }
+function getBackgroundColor() {
+    var x = document.getElementById("myBGColor").value;
+    let color = hexToRgb(x);
+    terrainNode.drawInfo.uniforms.u_diffuseMult = [color.r,color.g,color.b,1];
+    wheelNode.drawInfo.uniforms.u_diffuseMult = [color.r,color.g,color.b,1];
+  }
+
+  function getWheelsColor() {
+    var x = document.getElementById("myWheelsColor").value;
+    let color = hexToRgb(x);
+    wheel1.drawInfo.uniforms.u_diffuseMult = [color.r,color.g,color.b,1];
+     wheel2.drawInfo.uniforms.u_diffuseMult = [color.r,color.g,color.b,1];
+      wheel3.drawInfo.uniforms.u_diffuseMult = [color.r,color.g,color.b,1];
+       wheel4.drawInfo.uniforms.u_diffuseMult = [color.r,color.g,color.b,1];
+  }
+  function componentToHex(c) {
+    var hex = c.toString(16);
+    return hex.length == 1 ? "0" + hex : hex;
+  }
+
+function rgbToHex(r, g, b) {
+    return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+}
+function hexToRgb(hex) {
+    var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? {
+        r: parseInt(result[1], 16)/255,
+        g: parseInt(result[2], 16)/255,
+        b: parseInt(result[3], 16)/255
+    } : null;
 }
